@@ -36,6 +36,16 @@ Uygulama içinden eklenen mekânlar ve rezervasyonlar bu veritabanında saklanı
 
 Migration uygulandıktan sonra `.env.local` içindeki Supabase URL ve publishable key değerlerini ekleyip uygulamayı yeniden başlatın. Tarayıcıya hiçbir zaman `service_role` anahtarı koymayın.
 
+## GitHub Pages yayını
+
+Ana dala yapılan her güncelleme GitHub Actions üzerinden GitHub Pages yayını başlatır. Depo ayarlarında:
+
+1. Settings > Pages > Build and deployment bölümünde kaynak olarak GitHub Actions'ı seçin.
+2. Settings > Secrets and variables > Actions > Variables bölümüne `VITE_SUPABASE_URL` (Project URL) ve `VITE_SUPABASE_ANON_KEY` (publishable veya anon public key) değişkenlerini ekleyin. Bu değerler tarayıcıya gönderilir; `service_role` anahtarını eklemeyin.
+3. Supabase Authentication > URL Configuration bölümünde Site URL'yi `https://oguzozturk77-prog.github.io/mekan-prototype/` yapın. Redirect URLs listesine bu adres için `/**` ve yerel geliştirme için `http://localhost:5173/**` ekleyin.
+
+Yayın adresi `https://oguzozturk77-prog.github.io/mekan-prototype/` olur. GitHub Free planında Pages için depo herkese açık olmalıdır; özel depoda Pages için uygun ücretli plan gerekir. Depo görünürlüğünü bu dosyalar değiştirmez.
+
 ## Komutlar
 
 ```sh

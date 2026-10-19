@@ -3,22 +3,24 @@ import { describe, expect, it, vi } from "vitest";
 import Dashboard from "./Dashboard";
 
 describe("Dashboard", () => {
-  it("shows the authenticated overview and sample metrics", () => {
+  it("shows the workspace overview without inventing sample records", async () => {
     render(<Dashboard email="ayse@example.com" onSignOut={vi.fn()} />);
 
     expect(screen.getByRole("heading", { name: /merhaba/i })).toBeInTheDocument();
-    expect(screen.getByText(/Örnek çalışma alanı/)).toBeInTheDocument();
+    expect(screen.getAllByText("Çalışma alanı").length).toBeGreaterThan(0);
     expect(screen.getByText("Toplam rezervasyon")).toBeInTheDocument();
-    expect(screen.getByText("₺284.650")).toBeInTheDocument();
+    await screen.findByRole("alert");
+    expect(screen.queryByText("₺284.650")).not.toBeInTheDocument();
   });
 
-  it("navigates between dashboard sections", () => {
+  it("navigates between database-backed dashboard sections", async () => {
     render(<Dashboard email="ayse@example.com" onSignOut={vi.fn()} />);
+    await screen.findByRole("alert");
 
     const spacesNavigation = screen.getByRole("navigation", { name: "Ana gezinme" });
     fireEvent.click(within(spacesNavigation).getByRole("button", { name: /^Mekânlar/ }));
     expect(screen.getByRole("heading", { name: "Mekânlar" })).toBeInTheDocument();
-    expect(screen.getByText("Kıyı Loft")).toBeInTheDocument();
+    expect(screen.getByText("Henüz mekân eklenmedi")).toBeInTheDocument();
     expect(within(spacesNavigation).getByRole("button", { name: /^Mekânlar/ })).toHaveAttribute("aria-current", "page");
   });
 

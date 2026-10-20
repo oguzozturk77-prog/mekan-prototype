@@ -44,7 +44,9 @@ Ana dala yapılan her güncelleme GitHub Actions üzerinden GitHub Pages yayın�
 2. Settings > Secrets and variables > Actions > Variables bölümüne `VITE_SUPABASE_URL` (Project URL) ve `VITE_SUPABASE_ANON_KEY` (publishable veya anon public key) değişkenlerini ekleyin. Bu değerler tarayıcıya gönderilir; `service_role` anahtarını eklemeyin.
 3. Supabase Authentication > URL Configuration bölümünde Site URL'yi `https://oguzozturk77-prog.github.io/mekan-prototype/` yapın. Redirect URLs listesine bu adres için `/**` ve yerel geliştirme için `http://localhost:5173/**` ekleyin.
 
-Ana dalın yayını `https://oguzozturk77-prog.github.io/mekan-prototype/` adresinde kalır. Açık pull request'ler ayrıca kendi önizlemelerini `/previews/<PR numarası>/` yolunda yayınlar; PR önizlemesi aynı Pages dağıtımında ana dalın mevcut üretim çıktısını da korur. Önizlemeyi kontrol edip PR'ı merge ettiğinizde ana dalın yeni sürümü kök adrese yayınlanır.
+Ana dalın yayını `https://oguzozturk77-prog.github.io/mekan-prototype/` adresinde kalır. Açık pull request'ler ayrıca kendi önizlemelerini `/previews/<PR numarası>/` yolunda yayınlar; PR önizlemesi aynı Pages dağıtımında ana dalın mevcut üretim çıktısını da korur. Önizleme, ana yayının dal korumasını değiştirmemek için ayrı bir `github-pages-preview` Actions ortamı kullanır. Önizlemeyi kontrol edip PR'ı merge ettiğinizde ana dalın yeni sürümü kök adrese yayınlanır.
+
+Ana dal ve PR önizlemesi şimdilik aynı `VITE_SUPABASE_URL` ve `VITE_SUPABASE_ANON_KEY` değişkenlerini kullanır. Önizlemede yapılan kayıt değişiklikleri aynı Supabase veritabanına yazılır.
 
 GitHub Free planında Pages için depo herkese açık olmalıdır; özel depoda Pages için uygun ücretli plan gerekir. Depo görünürlüğünü bu dosyalar değiştirmez.
 

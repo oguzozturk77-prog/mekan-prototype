@@ -2,7 +2,7 @@ name: Preview MEKAN pull request
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, prototype]
     types: [opened, reopened, synchronize]
 
 permissions:
@@ -19,27 +19,54 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - name: Check out pull request
+      - name: Check out pull request source
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          path: pull-request-source
+
+      - name: Check out production source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: production-source
+
+      - name: Check out prototype source
+        uses: actions/checkout@v4
+        with:
+          ref: prototype
+          path: prototype-source
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: |
+            pull-request-source/package-lock.json
+            production-source/package-lock.json
+            prototype-source/package-lock.json
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
       - name: Install pull request dependencies
+        working-directory: pull-request-source
         run: npm ci
 
       - name: Run pull request tests
+        working-directory: pull-request-source
         run: npm test
 
-      - name: Verify Supabase public settings
+      - name: Install production dependencies
+        working-directory: production-source
+        run: npm ci
+
+      - name: Install prototype dependencies
+        working-directory: prototype-source
+        run: npm ci
+
+      - name: Verify production Supabase settings
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
@@ -48,41 +75,45 @@ jobs:
           test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Set the VITE_SUPABASE_ANON_KEY repository variable."; exit 1; }
           node --input-type=module -e 'const url = new URL(process.env.VITE_SUPABASE_URL); if (url.protocol !== "https:" || !url.hostname.endsWith(".supabase.co")) { console.error("VITE_SUPABASE_URL must be an HTTPS Supabase project URL."); process.exit(1); }'
 
-      - name: Build pull request preview
-        run: npm run build -- --mode pages-preview
+      - name: Verify prototype Supabase settings
         env:
-          VITE_PAGES_PREVIEW_ID: ${{ github.event.pull_request.number }}
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
-
-      - name: Add preview to the Pages artifact
-        env:
-          PREVIEW_ID: ${{ github.event.pull_request.number }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_PROTOTYPE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_PROTOTYPE_SUPABASE_ANON_KEY }}
         run: |
-          mkdir -p "site/previews/$PREVIEW_ID"
-          cp -a dist/. "site/previews/$PREVIEW_ID/"
+          test -n "$VITE_SUPABASE_URL" || { echo "Set the VITE_PROTOTYPE_SUPABASE_URL repository variable to a separate test project."; exit 1; }
+          test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Set the VITE_PROTOTYPE_SUPABASE_ANON_KEY repository variable to the test project's publishable key."; exit 1; }
+          node --input-type=module -e 'const url = new URL(process.env.VITE_SUPABASE_URL); if (url.protocol !== "https:" || !url.hostname.endsWith(".supabase.co")) { console.error("VITE_PROTOTYPE_SUPABASE_URL must be an HTTPS Supabase project URL."); process.exit(1); }'
 
-      - name: Check out the current production version
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.base.ref }}
-          path: production-source
-
-      - name: Install production dependencies
-        working-directory: production-source
-        run: npm ci
-
-      - name: Build the unchanged production site
+      - name: Build production site
         working-directory: production-source
         run: npm run build -- --mode pages
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
 
-      - name: Keep the production site at the root
+      - name: Build stable prototype site
+        working-directory: prototype-source
+        run: npm run build -- --mode pages-prototype
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_PROTOTYPE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_PROTOTYPE_SUPABASE_ANON_KEY }}
+
+      - name: Build pull request preview
+        working-directory: pull-request-source
+        run: npm run build -- --mode pages-preview
+        env:
+          VITE_PAGES_PREVIEW_ID: ${{ github.event.pull_request.number }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_PROTOTYPE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_PROTOTYPE_SUPABASE_ANON_KEY }}
+
+      - name: Assemble production, prototype, and pull request preview
+        env:
+          PREVIEW_ID: ${{ github.event.pull_request.number }}
         run: |
-          mkdir -p site
+          mkdir -p site site/prototype "site/previews/$PREVIEW_ID"
           cp -a production-source/dist/. site/
+          cp -a prototype-source/dist/. site/prototype/
+          cp -a pull-request-source/dist/. "site/previews/$PREVIEW_ID/"
 
       - name: Upload combined Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -97,12 +128,14 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Deploy production root and pull request preview
+      - name: Deploy production, prototype, and pull request preview
         id: deployment
         uses: actions/deploy-pages@v4
 
-      - name: Add the preview link to the run summary
+      - name: Add preview links to the run summary
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
           PREVIEW_ID: ${{ github.event.pull_request.number }}
-        run: echo "[Open MEKAN preview](${PAGE_URL}previews/${PREVIEW_ID}/)" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "[Open stable prototype](${PAGE_URL}prototype/)" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Open this pull request preview](${PAGE_URL}previews/${PREVIEW_ID}/)" >> "$GITHUB_STEP_SUMMARY"

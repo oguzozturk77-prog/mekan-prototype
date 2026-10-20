@@ -8,9 +8,11 @@ const previewId = (globalThis as typeof globalThis & {
 export default defineConfig(({ mode }) => ({
   base: mode === "pages"
     ? "/mekan-prototype/"
-    : mode === "pages-preview"
-      ? `/mekan-prototype/previews/${previewId}/`
-      : "/",
+    : mode === "pages-prototype"
+      ? "/mekan-prototype/prototype/"
+      : mode === "pages-preview"
+        ? `/mekan-prototype/previews/${previewId}/`
+        : "/",
   plugins: [react()],
   test: {
     environment: "jsdom",

@@ -7,6 +7,8 @@ import {
   CalendarRange,
   ChartNoAxesCombined,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleHelp,
   Clock3,
   DoorOpen,
@@ -17,19 +19,23 @@ import {
   Plus,
   Search,
   Settings2,
+  Trash2,
   UsersRound,
   X,
 } from "lucide-react";
 import {
   createReservation,
   createSpace,
+  deleteReservation,
   loadWorkspaceSnapshot,
+  updateReservation,
   type NewReservation,
   type NewSpace,
   type ReservationRecord,
   type SpaceRecord,
   type WorkspaceSnapshot,
 } from "../data/workspace";
+import { fromDateKey, getMonthGridDates, getTurkishCalendarDays, toDateKey, type CalendarDay } from "../data/turkishCalendar";
 
 type Section = "overview" | "spaces" | "reservations" | "calendar" | "customers" | "team" | "reports";
 type DashboardPage = Exclude<Section, "overview" | "spaces" | "reservations" | "customers">;
@@ -204,6 +210,134 @@ function CustomersPage({ snapshot }: { snapshot: WorkspaceSnapshot | null }) {
   </section>;
 }
 
+function CalendarPage({
+  reservations,
+  spaces,
+  onAdd,
+  onEdit,
+}: {
+  reservations: ReservationRecord[];
+  spaces: SpaceRecord[];
+  onAdd: (date: string) => void;
+  onEdit: (reservation: ReservationRecord) => void;
+}) {
+  const todayKey = toDateKey(new Date());
+  const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1, 12));
+  const [selectedDate, setSelectedDate] = useState(todayKey);
+  const [spaceFilter, setSpaceFilter] = useState("all");
+  const year = month.getFullYear();
+  const monthNumber = month.getMonth();
+  const gridDates = getMonthGridDates(year, monthNumber);
+  const holidaysByDate = new Map<string, CalendarDay[]>();
+  for (const holidayYear of [year - 1, year, year + 1]) {
+    for (const day of getTurkishCalendarDays(holidayYear)) {
+      holidaysByDate.set(day.date, [...(holidaysByDate.get(day.date) ?? []), day]);
+    }
+  }
+  const filteredReservations = spaceFilter === "all"
+    ? reservations
+    : reservations.filter((reservation) => reservation.spaceId === spaceFilter);
+  const reservationsByDate = new Map<string, ReservationRecord[]>();
+  for (const reservation of filteredReservations) {
+    const startsAt = new Date(reservation.startsAt);
+    const endsAt = new Date(new Date(reservation.endsAt).getTime() - 1);
+    const cursor = new Date(startsAt.getFullYear(), startsAt.getMonth(), startsAt.getDate(), 12);
+    const finalDate = new Date(endsAt.getFullYear(), endsAt.getMonth(), endsAt.getDate(), 12);
+    while (cursor <= finalDate) {
+      const key = toDateKey(cursor);
+      reservationsByDate.set(key, [...(reservationsByDate.get(key) ?? []), reservation]);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+  const selectedReservations = reservationsByDate.get(selectedDate) ?? [];
+  const selectedHolidays = holidaysByDate.get(selectedDate) ?? [];
+  const dateLabel = new Intl.DateTimeFormat("tr-TR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(fromDateKey(selectedDate));
+  const monthLabel = new Intl.DateTimeFormat("tr-TR", { month: "long", year: "numeric" }).format(month);
+  const weekdayLabels = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
+
+  function changeMonth(amount: number) {
+    const nextMonth = new Date(year, monthNumber + amount, 1, 12);
+    setMonth(nextMonth);
+    setSelectedDate(toDateKey(nextMonth));
+  }
+
+  function goToToday() {
+    const today = new Date();
+    setMonth(new Date(today.getFullYear(), today.getMonth(), 1, 12));
+    setSelectedDate(toDateKey(today));
+  }
+
+  return <section className="page-content calendar-page">
+    <div className="section-title-row calendar-title-row">
+      <div><span className="eyebrow">PROGRAMINIZ</span><h2>Takvim</h2><p className="section-description">Rezervasyonlarınızı ve Türkiye’deki özel günleri takip edin.</p></div>
+      <button className="button button--primary" onClick={() => onAdd(selectedDate)}><Plus size={17} /> Rezervasyon ekle</button>
+    </div>
+
+    <section className="panel calendar-panel" aria-label="Aylık takvim">
+      <div className="calendar-toolbar">
+        <div className="calendar-month-control">
+          <button className="icon-button" aria-label="Önceki ay" onClick={() => changeMonth(-1)}><ChevronLeft size={18} /></button>
+          <h3>{monthLabel}</h3>
+          <button className="icon-button" aria-label="Sonraki ay" onClick={() => changeMonth(1)}><ChevronRight size={18} /></button>
+          <button className="button button--secondary calendar-today-button" onClick={goToToday}>Bugün</button>
+        </div>
+        <label className="calendar-space-filter"><span className="sr-only">Mekâna göre filtrele</span><select value={spaceFilter} onChange={(event) => setSpaceFilter(event.target.value)}><option value="all">Tüm mekânlar</option>{spaces.map((space) => <option key={space.id} value={space.id}>{space.name}</option>)}</select><ChevronDown size={14} /></label>
+      </div>
+
+      <div className="calendar-grid" role="grid" aria-label={monthLabel}>
+        {weekdayLabels.map((weekday) => <div className="calendar-weekday" role="columnheader" key={weekday}>{weekday}</div>)}
+        {gridDates.map(({ date, key, inMonth }) => {
+          const holidays = holidaysByDate.get(key) ?? [];
+          const dayReservations = reservationsByDate.get(key) ?? [];
+          const selected = key === selectedDate;
+          return <button
+            className={`calendar-day ${inMonth ? "" : "calendar-day--outside"} ${key === todayKey ? "calendar-day--today" : ""} ${selected ? "calendar-day--selected" : ""}`}
+            key={key}
+            role="gridcell"
+            aria-label={`${new Intl.DateTimeFormat("tr-TR", { day: "numeric", month: "long", year: "numeric" }).format(date)}${holidays.length ? `, ${holidays.map((holiday) => holiday.label).join(", ")}` : ""}${dayReservations.length ? `, ${dayReservations.length} rezervasyon` : ""}`}
+            aria-pressed={selected}
+            onClick={() => {
+              setSelectedDate(key);
+              if (!inMonth) setMonth(new Date(date.getFullYear(), date.getMonth(), 1, 12));
+            }}
+          >
+            <span className="calendar-day__number">{date.getDate()}</span>
+            {holidays.slice(0, 1).map((holiday) => <span key={holiday.label} className={`calendar-holiday calendar-holiday--${holiday.kind}`} title={holiday.label}>{holiday.label}</span>)}
+            {dayReservations.slice(0, 2).map((reservation) => <span key={reservation.id} className={`calendar-event calendar-event--${reservation.status}`} title={`${reservation.title} · ${reservation.spaceName}`}><b>{new Intl.DateTimeFormat("tr-TR", { hour: "2-digit", minute: "2-digit" }).format(new Date(reservation.startsAt))}</b> {reservation.title}</span>)}
+            {dayReservations.length > 2 && <span className="calendar-more">+{dayReservations.length - 2} rezervasyon</span>}
+          </button>;
+        })}
+      </div>
+
+      <div className="calendar-legend" aria-label="Takvim açıklamaları">
+        <span><i className="calendar-legend__dot calendar-legend__dot--reservation" /> Rezervasyon</span>
+        <span><i className="calendar-legend__dot calendar-legend__dot--resmi" /> Resmî tatil</span>
+        <span><i className="calendar-legend__dot calendar-legend__dot--dini" /> Dini bayram</span>
+        <span><i className="calendar-legend__dot calendar-legend__dot--anma" /> Anma günü</span>
+        <span><i className="calendar-legend__dot calendar-legend__dot--ozel" /> Özel gün</span>
+      </div>
+    </section>
+
+    <section className="panel calendar-day-panel">
+      <div className="calendar-day-panel__heading"><div><span className="eyebrow">GÜNÜN PROGRAMI</span><h3>{dateLabel}</h3></div><button className="button button--secondary" onClick={() => onAdd(selectedDate)}><Plus size={15} /> Bu güne ekle</button></div>
+      {selectedHolidays.length > 0 && <div className="calendar-selected-holidays">{selectedHolidays.map((holiday) => <span className={`calendar-holiday calendar-holiday--${holiday.kind}`} key={holiday.label}>{holiday.label}</span>)}</div>}
+      {selectedReservations.length ? <div className="calendar-agenda">{selectedReservations.map((reservation) => <article className="calendar-agenda__item" key={reservation.id}>
+        <span className="calendar-agenda__time">{new Intl.DateTimeFormat("tr-TR", { hour: "2-digit", minute: "2-digit" }).format(new Date(reservation.startsAt))}<small>{new Intl.DateTimeFormat("tr-TR", { hour: "2-digit", minute: "2-digit" }).format(new Date(reservation.endsAt))}</small></span>
+        <span className={`calendar-agenda__marker calendar-agenda__marker--${reservation.status}`} />
+        <span className="calendar-agenda__details"><b>{reservation.title}</b><span>{reservation.spaceName} · {reservation.customerName}</span></span>
+        <span className={`status-pill status-pill--${reservation.status}`}><i />{reservationStatusLabels[reservation.status]}</span>
+        <button className="button button--secondary calendar-edit-button" onClick={() => onEdit(reservation)}>Düzenle</button>
+      </article>)}</div> : <div className="empty-state calendar-empty-state"><CalendarDays size={20} /><p>Bu gün için rezervasyon yok.</p><button className="panel-link" onClick={() => onAdd(selectedDate)}>Rezervasyon ekle <ArrowRight size={15} /></button></div>}
+      {selectedHolidays.some((holiday) => holiday.kind === "dini") && <p className="calendar-date-note">Dini bayram tarihleri hicrî takvim hesabına göre gösterilir; resmî tarih bir gün farklı olabilir.</p>}
+    </section>
+  </section>;
+}
+
 function localDateTimeInput(date: Date) {
   const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return localDate.toISOString().slice(0, 16);
@@ -231,32 +365,76 @@ function SpaceDialog({ onClose, onSave, saving, error }: { onClose: () => void; 
   </section></div>;
 }
 
-function ReservationDialog({ spaces, onClose, onSave, saving, error }: { spaces: SpaceRecord[]; onClose: () => void; onSave: (input: NewReservation) => Promise<void>; saving: boolean; error: string }) {
-  const start = new Date(Date.now() + 60 * 60_000);
-  const end = new Date(start.getTime() + 2 * 60 * 60_000);
-  const [spaceId, setSpaceId] = useState(spaces[0]?.id ?? "");
-  const [title, setTitle] = useState("");
-  const [customerName, setCustomerName] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
-  const [startsAt, setStartsAt] = useState(localDateTimeInput(start));
-  const [endsAt, setEndsAt] = useState(localDateTimeInput(end));
+function ReservationDialog({
+  spaces,
+  reservation,
+  initialDate,
+  onClose,
+  onSave,
+  onDelete,
+  saving,
+  deleting,
+  error,
+}: {
+  spaces: SpaceRecord[];
+  reservation?: ReservationRecord;
+  initialDate?: string;
+  onClose: () => void;
+  onSave: (input: NewReservation) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  saving: boolean;
+  deleting: boolean;
+  error: string;
+}) {
+  const defaultStart = reservation
+    ? new Date(reservation.startsAt)
+    : initialDate
+      ? fromDateKey(initialDate)
+      : new Date(Date.now() + 60 * 60_000);
+  if (!reservation && initialDate) defaultStart.setHours(10, 0, 0, 0);
+  const defaultEnd = reservation ? new Date(reservation.endsAt) : new Date(defaultStart.getTime() + 2 * 60 * 60_000);
+  const [spaceId, setSpaceId] = useState(reservation?.spaceId ?? spaces[0]?.id ?? "");
+  const [title, setTitle] = useState(reservation?.title ?? "");
+  const [customerName, setCustomerName] = useState(reservation?.customerName ?? "");
+  const [customerEmail, setCustomerEmail] = useState(reservation?.customerEmail ?? "");
+  const [customerPhone, setCustomerPhone] = useState(reservation?.customerPhone ?? "");
+  const [startsAt, setStartsAt] = useState(() => localDateTimeInput(defaultStart));
+  const [endsAt, setEndsAt] = useState(() => localDateTimeInput(defaultEnd));
+  const [status, setStatus] = useState<ReservationRecord["status"]>(reservation?.status ?? "pending");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [dateError, setDateError] = useState("");
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void onSave({ spaceId, title, customerName, customerEmail, customerPhone, startsAt: new Date(startsAt).toISOString(), endsAt: new Date(endsAt).toISOString() });
+    setDateError("");
+    if (new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
+      setDateError("Bitiş saati başlangıç saatinden sonra olmalı.");
+      return;
+    }
+    void onSave({
+      spaceId,
+      title,
+      customerName,
+      customerEmail,
+      customerPhone,
+      startsAt: new Date(startsAt).toISOString(),
+      endsAt: new Date(endsAt).toISOString(),
+      status,
+    });
   }
 
   return <div className="data-dialog-backdrop"><section className="data-dialog" role="dialog" aria-modal="true" aria-labelledby="reservation-dialog-title">
-    <div className="data-dialog__heading"><div><span className="eyebrow">PROGRAM</span><h2 id="reservation-dialog-title">Yeni rezervasyon</h2></div><button className="icon-button" aria-label="Kapat" onClick={onClose}><X size={19} /></button></div>
+    <div className="data-dialog__heading"><div><span className="eyebrow">PROGRAM</span><h2 id="reservation-dialog-title">{reservation ? "Rezervasyonu düzenle" : "Yeni rezervasyon"}</h2></div><button className="icon-button" aria-label="Kapat" onClick={onClose}><X size={19} /></button></div>
     <form className="data-form" onSubmit={submit}>
       <label className="data-field"><span>Mekân</span><select required value={spaceId} onChange={(event) => setSpaceId(event.target.value)}>{spaces.map((space) => <option key={space.id} value={space.id}>{space.name}</option>)}</select></label>
       <label className="data-field"><span>Rezervasyon başlığı</span><input required maxLength={160} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Örn. Ürün çekimi" /></label>
       <label className="data-field"><span>Müşteri adı</span><input required maxLength={160} value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="Ad soyad" /></label>
       <div className="data-form__row"><label className="data-field"><span>E-posta <small>isteğe bağlı</small></span><input type="email" maxLength={254} value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} placeholder="ornek@eposta.com" /></label><label className="data-field"><span>Telefon <small>isteğe bağlı</small></span><input type="tel" maxLength={40} value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} placeholder="05xx xxx xx xx" /></label></div>
       <div className="data-form__row"><label className="data-field"><span>Başlangıç</span><input type="datetime-local" required value={startsAt} onChange={(event) => setStartsAt(event.target.value)} /></label><label className="data-field"><span>Bitiş</span><input type="datetime-local" required min={startsAt} value={endsAt} onChange={(event) => setEndsAt(event.target.value)} /></label></div>
-      {error && <div className="form-message form-message--error" role="alert">{error}</div>}
-      <div className="data-dialog__actions"><button className="button button--secondary" type="button" onClick={onClose}>Vazgeç</button><button className="button button--primary" type="submit" disabled={saving}>{saving ? "Kaydediliyor…" : "Rezervasyonu kaydet"}</button></div>
+      {reservation && <label className="data-field"><span>Durum</span><select value={status} onChange={(event) => setStatus(event.target.value as ReservationRecord["status"])}><option value="pending">Onay bekliyor</option><option value="confirmed">Onaylandı</option><option value="cancelled">İptal edildi</option></select></label>}
+      {(error || dateError) && <div className="form-message form-message--error" role="alert">{dateError || error}</div>}
+      {confirmDelete && <div className="calendar-delete-confirm" role="alert"><b>Rezervasyon silinsin mi?</b><span>Bu işlem geri alınamaz.</span><div><button className="button button--secondary" type="button" onClick={() => setConfirmDelete(false)}>Vazgeç</button><button className="button calendar-delete-confirm__button" type="button" disabled={deleting} onClick={() => reservation && void onDelete(reservation.id)}>{deleting ? "Siliniyor…" : "Evet, sil"}</button></div></div>}
+      <div className="data-dialog__actions">{reservation && !confirmDelete && <button className="button calendar-delete-button" type="button" onClick={() => setConfirmDelete(true)}><Trash2 size={15} /> Sil</button>}<button className="button button--secondary" type="button" onClick={onClose}>Vazgeç</button><button className="button button--primary" type="submit" disabled={saving || deleting}>{saving ? "Kaydediliyor…" : reservation ? "Değişiklikleri kaydet" : "Rezervasyonu kaydet"}</button></div>
     </form>
   </section></div>;
 }
@@ -275,12 +453,18 @@ export default function Dashboard({ email, displayName = "Yönetici", onSignOut 
   const [dataError, setDataError] = useState("");
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot | null>(null);
   const [modal, setModal] = useState<"space" | "reservation" | null>(null);
+  const [editingReservation, setEditingReservation] = useState<ReservationRecord | null>(null);
+  const [draftReservationDate, setDraftReservationDate] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [formError, setFormError] = useState("");
   const [notice, setNotice] = useState("");
   const userInitial = email.trim().charAt(0).toLocaleUpperCase("tr-TR") || "A";
   const spaces = snapshot?.spaces ?? [];
   const activeSpaces = spaces.filter((space) => space.isActive);
+  const reservationDialogSpaces = editingReservation
+    ? spaces.filter((space) => space.isActive || space.id === editingReservation.spaceId)
+    : activeSpaces;
   const reservations = snapshot?.reservations ?? [];
 
   const loadData = useCallback(async () => {
@@ -303,7 +487,7 @@ export default function Dashboard({ email, displayName = "Yönetici", onSignOut 
     setNotice("");
   }
 
-  function openReservationDialog() {
+  function openReservationDialog(date?: string) {
     setNotice("");
     if (activeSpaces.length === 0) {
       navigate("spaces");
@@ -311,6 +495,15 @@ export default function Dashboard({ email, displayName = "Yönetici", onSignOut 
       return;
     }
     setFormError("");
+    setEditingReservation(null);
+    setDraftReservationDate(date ?? null);
+    setModal("reservation");
+  }
+
+  function openReservationEdit(reservation: ReservationRecord) {
+    setFormError("");
+    setEditingReservation(reservation);
+    setDraftReservationDate(null);
     setModal("reservation");
   }
 
@@ -333,14 +526,37 @@ export default function Dashboard({ email, displayName = "Yönetici", onSignOut 
     setSaving(true);
     setFormError("");
     try {
-      await createReservation(input);
+      if (editingReservation) {
+        await updateReservation(editingReservation.id, editingReservation.customerId, input);
+      } else {
+        await createReservation(input);
+      }
+      const wasEditing = Boolean(editingReservation);
       setModal(null);
-      setNotice("Rezervasyon ve müşteri kaydı kaydedildi.");
+      setEditingReservation(null);
+      setDraftReservationDate(null);
+      setNotice(wasEditing ? "Rezervasyon güncellendi." : "Rezervasyon ve müşteri kaydı kaydedildi.");
       await loadData();
     } catch (error) {
       setFormError(messageFromError(error));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function removeReservation(id: string) {
+    setDeleting(true);
+    setFormError("");
+    try {
+      await deleteReservation(id);
+      setModal(null);
+      setEditingReservation(null);
+      setNotice("Rezervasyon silindi.");
+      await loadData();
+    } catch (error) {
+      setFormError(messageFromError(error));
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -384,14 +600,15 @@ export default function Dashboard({ email, displayName = "Yönetici", onSignOut 
           {activeSection === "overview" && <Overview displayName={displayName} onNavigate={navigate} workspace={snapshot} spaces={spaces} reservations={reservations} />}
           {activeSection === "spaces" && <SpacesPage spaces={spaces} onAdd={() => { setFormError(""); setModal("space"); }} />}
           {activeSection === "reservations" && <ReservationsPage reservations={reservations} onAdd={openReservationDialog} />}
+          {activeSection === "calendar" && <CalendarPage reservations={reservations} spaces={spaces} onAdd={openReservationDialog} onEdit={openReservationEdit} />}
           {activeSection === "customers" && <CustomersPage snapshot={snapshot} />}
-          {!(activeSection === "overview" || activeSection === "spaces" || activeSection === "reservations" || activeSection === "customers") && <section className="page-content"><div className="section-title-row"><div><span className="eyebrow">ÇALIŞMA ALANI</span><h2>{sectionCopy[activeSection].title}</h2><p className="section-description">{sectionCopy[activeSection].description}</p></div><button className="select-button">Bu ay <ChevronDown size={15} /></button></div><div className="coming-soon panel"><div className="coming-soon__icon"><Settings2 size={24} /></div><span className="eyebrow">YAKINDA</span><h3>{sectionCopy[activeSection].title} alanı hazırlanıyor.</h3><p>Bu bölüm için gerekli araçlar ve ayrıntılar bir sonraki adımda eklenecek.</p><button className="panel-link" onClick={() => navigate("overview")}>Genel bakışa dön <ArrowRight size={15} /></button></div></section>}
+          {!(activeSection === "overview" || activeSection === "spaces" || activeSection === "reservations" || activeSection === "calendar" || activeSection === "customers") && <section className="page-content"><div className="section-title-row"><div><span className="eyebrow">ÇALIŞMA ALANI</span><h2>{sectionCopy[activeSection].title}</h2><p className="section-description">{sectionCopy[activeSection].description}</p></div><button className="select-button">Bu ay <ChevronDown size={15} /></button></div><div className="coming-soon panel"><div className="coming-soon__icon"><Settings2 size={24} /></div><span className="eyebrow">YAKINDA</span><h3>{sectionCopy[activeSection].title} alanı hazırlanıyor.</h3><p>Bu bölüm için gerekli araçlar ve ayrıntılar bir sonraki adımda eklenecek.</p><button className="panel-link" onClick={() => navigate("overview")}>Genel bakışa dön <ArrowRight size={15} /></button></div></section>}
           <footer className="dashboard-footer"><span>MEKAN <span>·</span> Mekânınıza iyi bakın.</span><button><CircleHelp size={14} /> Yardım merkezi</button></footer>
         </div>
       </main>
 
       {modal === "space" && <SpaceDialog onClose={() => setModal(null)} onSave={saveSpace} saving={saving} error={formError} />}
-      {modal === "reservation" && <ReservationDialog spaces={activeSpaces} onClose={() => setModal(null)} onSave={saveReservation} saving={saving} error={formError} />}
+      {modal === "reservation" && <ReservationDialog key={editingReservation?.id ?? `new-${draftReservationDate ?? "today"}`} spaces={reservationDialogSpaces} reservation={editingReservation ?? undefined} initialDate={draftReservationDate ?? undefined} onClose={() => { setModal(null); setEditingReservation(null); }} onSave={saveReservation} onDelete={removeReservation} saving={saving} deleting={deleting} error={formError} />}
     </div>
   );
 }

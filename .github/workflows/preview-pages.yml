@@ -1,0 +1,108 @@
+name: Preview MEKAN pull request
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Install pull request dependencies
+        run: npm ci
+
+      - name: Run pull request tests
+        run: npm test
+
+      - name: Verify Supabase public settings
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          test -n "$VITE_SUPABASE_URL" || { echo "Set the VITE_SUPABASE_URL repository variable."; exit 1; }
+          test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Set the VITE_SUPABASE_ANON_KEY repository variable."; exit 1; }
+          node --input-type=module -e 'const url = new URL(process.env.VITE_SUPABASE_URL); if (url.protocol !== "https:" || !url.hostname.endsWith(".supabase.co")) { console.error("VITE_SUPABASE_URL must be an HTTPS Supabase project URL."); process.exit(1); }'
+
+      - name: Build pull request preview
+        run: npm run build -- --mode pages-preview
+        env:
+          VITE_PAGES_PREVIEW_ID: ${{ github.event.pull_request.number }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+
+      - name: Add preview to the Pages artifact
+        env:
+          PREVIEW_ID: ${{ github.event.pull_request.number }}
+        run: |
+          mkdir -p "site/previews/$PREVIEW_ID"
+          cp -a dist/. "site/previews/$PREVIEW_ID/"
+
+      - name: Check out the current production version
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          path: production-source
+
+      - name: Install production dependencies
+        working-directory: production-source
+        run: npm ci
+
+      - name: Build the unchanged production site
+        working-directory: production-source
+        run: npm run build -- --mode pages
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+
+      - name: Keep the production site at the root
+        run: |
+          mkdir -p site
+          cp -a production-source/dist/. site/
+
+      - name: Upload combined Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    environment:
+      name: github-pages-preview
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy production root and pull request preview
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Add the preview link to the run summary
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          PREVIEW_ID: ${{ github.event.pull_request.number }}
+        run: echo "[Open MEKAN preview](${PAGE_URL}previews/${PREVIEW_ID}/)" >> "$GITHUB_STEP_SUMMARY"

@@ -55,6 +55,10 @@ npm run build     # TypeScript kontrolü ve üretim derlemesi
 npm run preview   # Üretim çıktısını yerelde sun
 ```
 
+## Takvim
+
+Takvim görünümü ayı Türkçe gösterir ve haftayı pazartesi günü başlatır. Rezervasyonlar takvimden eklenebilir, düzenlenebilir, durumları değiştirilebilir ve silinebilir; kayıtlar Supabase'de saklanır. Türkiye'deki resmî tatiller, anma günleri ve bazı yaygın özel günler takvimde yer alır. Değişken tarihli Ramazan ve Kurban Bayramı günleri tarayıcının Hicrî Umm al-Qura takvim hesabıyla belirlenir; Diyanet'in resmî takvimi bir gün farklılık gösterebilir.
+
 ## İlk sürümdeki gezinme
 
-Genel Bakış, Mekânlar, Müşteriler ve Rezervasyonlar görünümleri Supabase kayıtlarını kullanır. Takvim, Ekip ve Raporlar için responsive navigasyon ve sonraki geliştirme adımında doldurulabilecek başlangıç ekranları bulunur.
+Genel Bakış, Mekânlar, Rezervasyonlar, Takvim ve Müşteriler görünümleri Supabase kayıtlarını kullanır. Ekip ve Raporlar için responsive navigasyon ve sonraki geliştirme adımında doldurulabilecek başlangıç ekranları bulunur.

@@ -24,6 +24,9 @@ export type ReservationRecord = {
   endsAt: string;
   status: ReservationStatus;
   spaceId: string;
+  customerId: string;
+  customerEmail: string | null;
+  customerPhone: string | null;
   spaceName: string;
   customerName: string;
 };
@@ -46,6 +49,7 @@ export type NewReservation = {
   customerPhone: string;
   startsAt: string;
   endsAt: string;
+  status?: ReservationStatus;
 };
 
 type DataClient = NonNullable<typeof supabase>;
@@ -130,6 +134,9 @@ export async function loadWorkspaceSnapshot(clientOverride: DataClient | null = 
     endsAt: reservation.ends_at as string,
     status: reservation.status as ReservationStatus,
     spaceId: reservation.space_id as string,
+    customerId: reservation.customer_id as string,
+    customerEmail: customers.find((customer) => customer.id === reservation.customer_id)?.email ?? null,
+    customerPhone: customers.find((customer) => customer.id === reservation.customer_id)?.phone ?? null,
     spaceName: spaceNames.get(reservation.space_id as string) ?? "Mekân silinmiş",
     customerName: customerNames.get(reservation.customer_id as string) ?? "Müşteri silinmiş",
   }));
@@ -167,7 +174,78 @@ export async function createReservation(input: NewReservation, clientOverride: D
     p_title: input.title.trim(),
     p_starts_at: input.startsAt,
     p_ends_at: input.endsAt,
-    p_status: "pending",
+    p_status: input.status ?? "pending",
   });
   if (error) throw error;
+}
+
+export async function updateReservation(
+  id: string,
+  customerId: string,
+  input: NewReservation,
+  clientOverride: DataClient | null = supabase,
+) {
+  const client = requireClient(clientOverride);
+  const workspaceId = await getWorkspaceId(client);
+  const normalizedEmail = input.customerEmail.trim().toLowerCase() || null;
+
+  const { data: reservation, error: reservationError } = await client
+    .from("reservations")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("id", id)
+    .maybeSingle();
+  if (reservationError) throw reservationError;
+  if (!reservation) throw new Error("Bu rezervasyon bulunamadı veya artık erişilemiyor.");
+
+  let resolvedCustomerId = customerId;
+  if (normalizedEmail) {
+    const { data: matchingCustomer, error: matchingCustomerError } = await client
+      .from("customers")
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .eq("email", normalizedEmail)
+      .maybeSingle();
+    if (matchingCustomerError) throw matchingCustomerError;
+    if (matchingCustomer?.id) resolvedCustomerId = matchingCustomer.id as string;
+  }
+
+  const { error: customerError } = await client
+    .from("customers")
+    .update({
+      name: input.customerName.trim(),
+      email: normalizedEmail,
+      phone: input.customerPhone.trim() || null,
+    })
+    .eq("workspace_id", workspaceId)
+    .eq("id", resolvedCustomerId);
+  if (customerError) throw customerError;
+
+  const { error } = await client
+    .from("reservations")
+    .update({
+      space_id: input.spaceId,
+      customer_id: resolvedCustomerId,
+      title: input.title.trim(),
+      starts_at: input.startsAt,
+      ends_at: input.endsAt,
+      status: input.status ?? "pending",
+    })
+    .eq("workspace_id", workspaceId)
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteReservation(id: string, clientOverride: DataClient | null = supabase) {
+  const client = requireClient(clientOverride);
+  const workspaceId = await getWorkspaceId(client);
+  const { data, error } = await client
+    .from("reservations")
+    .delete()
+    .eq("workspace_id", workspaceId)
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("Bu rezervasyon bulunamadı veya silinemedi.");
 }
